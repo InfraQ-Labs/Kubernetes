@@ -1,7 +1,6 @@
 # 🚀 Kubernetes Master Node Cluster Setup on Ubuntu 24.04
 
 This guide explains — step by step — how to install and configure a **Kubernetes v1.32** single-node (master) cluster using **containerd** and **Calico CNI**.  
-
 Each command is explained with its **purpose** and **technical reasoning**, so you not only *run* it but also *understand* it.
 
 ---
@@ -19,7 +18,6 @@ Each command is explained with its **purpose** and **technical reasoning**, so y
 ---
 
 ## 🧠 Step 1: Disable Swap
-
 Kubernetes requires all nodes to have **swap turned off** to ensure predictable memory management.
 
 swapoff -a
@@ -37,7 +35,6 @@ rm -f /swap.img
 ---
 
 ## 🧩 Step 2: Load Kernel Modules
-
 Kubernetes networking depends on specific kernel features for bridging and overlay networks.
 
 modprobe overlay
@@ -55,7 +52,6 @@ EOF
 ---
 
 ## 🌐 Step 3: Configure Sysctl for Networking
-
 Kubernetes requires Linux to forward packets and allow bridge traffic inspection.
 
 tee /etc/sysctl.d/kubernetes.conf <<EOT
@@ -83,7 +79,6 @@ apt install -y curl gnupg2 software-properties-common apt-transport-https ca-cer
 ---
 
 ## 🐳 Step 5: Install and Configure Containerd
-
 Containerd is the container runtime engine used by Kubernetes.
 
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/containerd.gpg
