@@ -32,7 +32,6 @@ rm -f /swap.img
 ````
 
 ### 🔍 Why Swap Is Disabled
-
 * Kubernetes relies on **precise memory management** to schedule pods. It expects the system to have **predictable resource availability**.
 * If swap is enabled, Kubernetes cannot accurately determine if the system has **enough real RAM** to run a pod.
 * This leads to **overcommitment**, potentially causing performance issues or pod evictions.
@@ -58,7 +57,6 @@ EOF
 ```
 
 ### 🔍 Why These Modules Are Required
-
 * `overlay`: Enables container image layers and overlay filesystems.
 * `br_netfilter`: Allows iptables to see bridged traffic — essential for pod networking (CNI plugins like Calico).
 
@@ -81,7 +79,6 @@ sysctl --system
 ```
 
 ### 🔍 Explanation
-
 * These parameters ensure bridged and forwarded packets are visible to iptables.
 * `sysctl --system` applies all sysctl configurations immediately.
 
@@ -97,7 +94,6 @@ apt install -y curl gnupg2 software-properties-common apt-transport-https ca-cer
 ```
 
 ### 🔍 Explanation
-
 * Installs essential packages for downloading and managing HTTPS repositories securely.
 
 ---
@@ -117,7 +113,6 @@ apt install -y containerd.io
 ```
 
 ### 🔍 Explanation
-
 * Adds Docker’s official repo (containerd maintained here).
 * Installs the containerd runtime.
 
@@ -130,7 +125,6 @@ systemctl restart containerd
 ```
 
 ### 🔍 Why `systemdCgroup = true`?
-
 * Kubernetes and containerd must use the **same cgroup driver** (systemd) to manage resource isolation and avoid pod runtime errors.
 
 ---
@@ -148,7 +142,6 @@ apt install -y kubelet kubeadm kubectl
 ```
 
 ### 🔍 Explanation
-
 * Adds official Kubernetes package repository.
 * Installs `kubelet` (node agent), `kubeadm` (setup tool), and `kubectl` (CLI).
 
@@ -163,7 +156,6 @@ kubeadm init --apiserver-advertise-address=192.168.56.26 --pod-network-cidr=10.2
 ```
 
 ### 🔍 Explanation
-
 * `--apiserver-advertise-address`: The host-only NIC IP.
 * `--pod-network-cidr`: Defines IP range for pods (used by Calico).
 
@@ -184,7 +176,6 @@ chown $(id -u):$(id -g) $HOME/.kube/config
 ```
 
 ### 🔍 Explanation
-
 * Sets up kubeconfig file for admin user to run `kubectl` commands.
 
 ---
@@ -198,7 +189,6 @@ kubectl set env daemonset/calico-node -n kube-system IP_AUTODETECTION_METHOD=int
 ```
 
 ### 🔍 Explanation
-
 * Downloads and applies Calico manifest.
 * Ensures Calico uses your host-only interface (`enp0s8`) for pod networking.
 
@@ -230,7 +220,6 @@ kubectl get svc -n demo-app
 ```
 
 ### 🔍 Explanation
-
 * Creates namespace `demo-app`.
 * Deploys NGINX pods.
 * Exposes service via NodePort for browser access:
@@ -248,7 +237,6 @@ kubectl taint nodes $(hostname) node-role.kubernetes.io/control-plane:NoSchedule
 ```
 
 ### 🔍 Explanation
-
 * Removes scheduling restriction on master node (useful for single-node clusters).
 
 ---
@@ -268,7 +256,6 @@ kubectl get nodes -o wide
 ```
 
 ### 🔍 Explanation
-
 * Ensures kubelet uses correct IP for node registration.
 * Adds hostname mapping for API and DNS resolution.
 
