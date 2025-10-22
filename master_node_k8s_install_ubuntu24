@@ -1,217 +1,250 @@
-# 🚀 Kubernetes Master Node Cluster Setup on Ubuntu 24.04
+# 🚀 Kubernetes Installation on Ubuntu Server 24.04 (Single-node Master)
 
-This guide explains — step by step — how to install and configure a **Kubernetes v1.32** single-node (master) cluster using **containerd** and **Calico CNI**.  
-Each command is explained with its **purpose** and **technical reasoning**, so you not only *run* it but also *understand* it.
+## Prerequisites
 
----
-
-## ⚙️ System Requirements
-
-- **OS**: Ubuntu Server 24.04  
-- **Hardware**: 2 vCPU, 16GB RAM  
-
-(Optional)
-- **Network**: 2 NICs —  
-  - 1 NAT (for internet access)  
-  - 1 Host-only (for cluster communication)
+* Ubuntu Server 25.04
+* 2 vCPU, 16GB RAM
+* 2 NICs (1 NAT, 1 Host-only >>>>> optional)
 
 ---
 
-## 🧠 Step 1: Disable Swap
-Kubernetes requires all nodes to have **swap turned off** to ensure predictable memory management.
+### 1. Pick Kubernetes Version
 
-swapoff -a
-free -h
-sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
-rm -f /swap.img
-
-🔍 Why Swap Is Disabled
-* Kubernetes relies on **precise memory management** to schedule pods. It expects the system to have **predictable resource availability**.
-* If swap is enabled, Kubernetes cannot accurately determine if the system has **enough real RAM** to run a pod.
-* This leads to **overcommitment**, potentially causing performance issues or pod evictions.
-* Kubelet will refuse to start if swap is enabled (default behavior since v1.8).
-* Swap can cause **performance unpredictability**: containers may slow down due to disk I/O being much slower than RAM.
+* Check latest release: [https://kubernetes.io/releases/](https://kubernetes.io/releases/)
+* Power on VM and log in.
 
 ---
 
-## 🧩 Step 2: Load Kernel Modules
-Kubernetes networking depends on specific kernel features for bridging and overlay networks.
+### 2. Disable Swap: 
 
-modprobe overlay
-modprobe br_netfilter
+```bash
+sudo swapoff -a
+sudo free -h
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+sudo rm /swap.img
+```
 
+> Swap must be off for kubelet to start. Ensures Kubernetes schedules pods with real RAM only.
+> Kubernetes relies on precise memory management to schedule pods. It expects the system to have predictable resource availability
+> If swap is enabled, Kubernetes cannot accurately determine if the system has **enough real RAM to run a pod.
+> This leads to **overcommitment**, potentially causing performance issues or pod evictions.
+
+---
+
+### 3. Load Kernel Modules
+
+```bash
+sudo modprobe overlay
+sudo modprobe br_netfilter
+```
+
+> overlay: Enables container image layers and overlay filesystems.
+> br_netfilter: Allows iptables to see bridged traffic — essential for pod networking (CNI plugins like Calico).
+---
+
+### 4. Load Modules Permanently
+
+```bash
 tee /etc/modules-load.d/k8s.conf <<EOF
 overlay
 br_netfilter
 EOF
-
-🔍 Why These Modules Are Required
-* `overlay`: Enables container image layers and overlay filesystems.
-* `br_netfilter`: Allows iptables to see bridged traffic — essential for pod networking (CNI plugins like Calico).
+```
 
 ---
 
-## 🌐 Step 3: Configure Sysctl for Networking
-Kubernetes requires Linux to forward packets and allow bridge traffic inspection.
+### 5. Configure Kernel Parameters (Sysctl)
 
+```bash
 tee /etc/sysctl.d/kubernetes.conf <<EOT
 net.bridge.bridge-nf-call-ip6tables = 1
 net.bridge.bridge-nf-call-iptables = 1
 net.ipv4.ip_forward = 1
 EOT
 
-sysctl --system
+sudo sysctl --system
+```
 
-🔍 Explanation
-* These parameters ensure bridged and forwarded packets are visible to iptables.
-* `sysctl --system` applies all sysctl configurations immediately.
-
----
-
-## 📦 Step 4: Install Dependencies for Containerd
-
-apt update
-apt install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates
-
-🔍 Explanation
-* Installs essential packages for downloading and managing HTTPS repositories securely.
+> Ensures packet forwarding and iptables rules work for pod networking.
 
 ---
 
-## 🐳 Step 5: Install and Configure Containerd
-Containerd is the container runtime engine used by Kubernetes.
+### 6. Install Dependencies for Containerd
 
+```bash
+sudo apt update
+sudo apt install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates
+```
+
+---
+
+### 7. Add Containerd Repository
+
+```bash
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/containerd.gpg
-add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-
-apt update
-apt install -y containerd.io
-
-🔍 Explanation
-* Adds Docker’s official repo (containerd maintained here).
-* Installs the containerd runtime.
-
-### 🔧 Configure Containerd to Use Systemd Cgroup Driver
-
-containerd config default | tee /etc/containerd/config.toml >/dev/null 2>&1
-sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
-systemctl restart containerd
-
-🔍 Why `systemdCgroup = true`?
-* Kubernetes and containerd must use the **same cgroup driver** (systemd) to manage resource isolation and avoid pod runtime errors.
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+```
 
 ---
 
-## ☸️ Step 6: Install Kubernetes Components
+### 8. Install Containerd
 
+```bash
+sudo apt update
+sudo apt install -y containerd.io
+```
+
+---
+
+### 9. Configure Containerd to Use systemd Cgroup
+
+```bash
+sudo containerd config default | sudo tee /etc/containerd/config.toml >/dev/null 2>&1
+sudo sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
+sudo systemctl restart containerd
+sudo systemctl enable containerd
+```
+
+> Ensures containerd uses same cgroup driver as Kubernetes.
+
+---
+
+### 10. Add Kubernetes Repository
+
+```bash
 curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/k8s.gpg
 echo 'deb [signed-by=/etc/apt/keyrings/k8s.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' | sudo tee /etc/apt/sources.list.d/k8s.list
-
-apt update
-apt install -y kubelet kubeadm kubectl
-
-🔍 Explanation
-* Adds official Kubernetes package repository.
-* Installs `kubelet` (node agent), `kubeadm` (setup tool), and `kubectl` (CLI).
+sudo apt update
+```
 
 ---
 
-## 🚀 Step 7: Initialize Kubernetes Cluster
+### 11. Install Kubernetes Components
 
-kubeadm init --apiserver-advertise-address=192.168.56.26 --pod-network-cidr=10.244.0.0/16
+```bash
+sudo apt install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+```
 
-🔍 Explanation
-* `--apiserver-advertise-address`: The host-only NIC IP.
-* `--pod-network-cidr`: Defines IP range for pods (used by Calico).
-
-If initialization fails:
-
-kubeadm reset
+> Installs `kubelet` (node agent), `kubeadm` (cluster bootstrap), `kubectl` (CLI).
 
 ---
 
-## 🧾 Step 8: Configure kubectl Access
+### 12. Initialize Kubernetes Cluster
 
+```bash
+ip a | grep enp0s8  # pick host-only IP
+sudo kubeadm init --apiserver-advertise-address=192.168.56.26 --pod-network-cidr=10.244.0.0/16
+```
+
+> Optional: Pull all images manually to save time
+> --apiserver-advertise-address: The host-only NIC IP.
+> --pod-network-cidr: Defines IP range for pods (used by Calico).
+
+```bash
+sudo kubeadm config images pull
+```
+
+> If errors occur:
+
+```bash
+sudo kubeadm reset
+```
+
+---
+
+### 13. Setup kubectl Access
+
+```bash
 mkdir -p $HOME/.kube
-cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-chown $(id -u):$(id -g) $HOME/.kube/config
-
-🔍 Explanation
-* Sets up kubeconfig file for admin user to run `kubectl` commands.
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+```
 
 ---
 
-## 🕸️ Step 9: Install Calico CNI Plugin
+### 14. Install Calico Network Plugin
 
+```bash
 curl -O https://raw.githubusercontent.com/projectcalico/calico/v3.30.0/manifests/calico.yaml
 kubectl apply -f calico.yaml
 kubectl set env daemonset/calico-node -n kube-system IP_AUTODETECTION_METHOD=interface=enp0s8
-
-🔍 Explanation
-* Downloads and applies Calico manifest.
-* Ensures Calico uses your host-only interface (`enp0s8`) for pod networking.
+```
+> Ensures Calico uses your host-only interface (enp0s8) for pod networking.
 
 ---
 
-## 🔍 Step 10: Verify Cluster Status
+### 15. Verify Cluster Status
 
+```bash
 kubectl get pods -n kube-system
+kubectl get pods -A
 kubectl get nodes -o wide
+```
 
-💡 **Tip:** If nodes show `NotReady`, restart services:
+> If node shows `NotReady`: Just restart services:
 
-systemctl restart containerd
-systemctl restart kubelet
+```bash
+sudo systemctl restart containerd
+sudo systemctl restart kubelet
+kubectl get nodes -o wide
+```
 
 ---
 
-## 🌐 Step 11: Deploy Test Application
+### 16. Deploy Test Application
 
+```bash
 kubectl create ns demo-app
 kubectl create deployment nginx-app --image=nginx --replicas=2 -n demo-app
-kubectl expose deployment nginx-app -n demo-app --type=NodePort --port=80
+kubectl get deployment -n demo-app
+kubectl get pods -n demo-app
+```
+
+---
+
+### 17. Expose Deployment Using NodePort
+
+```bash
+kubectl expose deployment nginx-app -n demo-app --type NodePort --port 80
 kubectl get svc -n demo-app
+```
 
-🔍 Explanation
-* Creates namespace `demo-app`.
-* Deploys NGINX pods.
-* Exposes service via NodePort for browser access:
-
-curl 192.168.56.26:<NodePort>
+> Access app: `curl 192.168.56.26:<NodePort>`
 
 ---
 
-## 🧩 Step 12: Allow Pods on Master (Optional)
+### 18. Optional: Allow Pods on Master Node
 
+```bash
 kubectl taint nodes $(hostname) node-role.kubernetes.io/control-plane:NoSchedule-
-
-🔍 Explanation
-* Removes scheduling restriction on master node (useful for single-node clusters).
+```
 
 ---
 
-## 🧱 Step 13: Fix Node IP Binding
+### 19. Fix Node IP (if kubelet uses wrong IP)
 
-cat <<EOT | tee /var/lib/kubelet/kubeadm-flags.env
+```bash
+cat <<EOT | sudo tee /var/lib/kubelet/kubeadm-flags.env
 KUBELET_KUBEADM_ARGS="--container-runtime-endpoint=unix:///var/run/containerd/containerd.sock --pod-infra-container-image=registry.k8s.io/pause:3.10 --node-ip=192.168.56.26"
 EOT
 
-echo "127.0.1.1 lnx25-docker" >> /etc/hosts
-echo "192.168.56.26 lnx25-docker" >> /etc/hosts
+echo "127.0.1.1 lnx25-docker" | sudo tee -a /etc/hosts
+echo "192.168.56.26 lnx25-docker" | sudo tee -a /etc/hosts
 
-systemctl restart kubelet
+sudo systemctl restart kubelet
 kubectl get nodes -o wide
-
-🔍 Explanation
-* Ensures kubelet uses correct IP for node registration.
-* Adds hostname mapping for API and DNS resolution.
+```
 
 ---
 
-## ✅ Final Verification
+### ✅ Final Verification
 
+```bash
 kubectl get nodes -o wide
 kubectl get pods -A
+```
 
-🎉 Your single-node Kubernetes cluster is now fully operational!
+🎉 Cluster ready!
+
 
